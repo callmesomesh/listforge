@@ -58,9 +58,10 @@ export default function Page() {
             answer is &quot;hold for a human,&quot; not a confidence score.
           </li>
           <li>
-            <strong>&quot;Invalid&quot; needs a reason, not just a flag.</strong> No-MX and
-            DNS-lookup-failure look identical in a spreadsheet but mean different things — one is
-            permanent, the other might be transient.
+            <strong>&quot;Invalid&quot; needs a reason, not just a flag.</strong> A domain that does
+            not exist (NXDOMAIN), a domain with no mail setup, a name that can&apos;t be queried,
+            and a resolver that couldn&apos;t be reached look identical in a spreadsheet — but one
+            is permanent, one is fixable, one is a typo, and one might be transient.
           </li>
         </ul>
 
