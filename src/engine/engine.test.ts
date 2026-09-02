@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { lookupMx, lookupMxBatch } from './mx';
+import { lookupMx, lookupMxBatch, normalizeDomainName } from './mx';
 import { segment } from './segment';
 import type { DomainInput, MxResult } from './types';
 
-function mockFetch(response: { Answer?: Array<{ data: string }> } | null, ok = true): typeof fetch {
+function mockFetch(response: { Status?: number; Answer?: Array<{ data: string }> } | null, ok = true): typeof fetch {
   return vi.fn(async () => ({
     ok,
     json: async () => response,
@@ -35,6 +35,57 @@ describe('lookupMx', () => {
     const f = vi.fn(async () => { throw new Error('network down'); }) as unknown as typeof fetch;
     const r = await lookupMx('unreachable.example', f);
     expect(r.status).toBe('lookup_failed');
+  });
+
+  // Found by the 2026-09-02 external audit (AUD-04): DNS RCODE 3 means the domain
+  // does not exist — reporting it as "no MX record" collapses exactly the
+  // distinction this tool's copy says matters.
+  it('NXDOMAIN (Status 3) is nxdomain, not no_mx', async () => {
+    const f = mockFetch({ Status: 3 });
+    const r = await lookupMx('thisdomaindoesnotexist.example-tld', f);
+    expect(r.status).toBe('nxdomain');
+    expect(r.records).toEqual([]);
+  });
+
+  it('a non-zero, non-3 DNS status (e.g. SERVFAIL=2) is lookup_failed', async () => {
+    const f = mockFetch({ Status: 2 });
+    const r = await lookupMx('servfail.example', f);
+    expect(r.status).toBe('lookup_failed');
+  });
+
+  // Found by the same audit (AUD-03): Cloudflare rejects raw unicode names, so
+  // münchen.de — an existing domain — was reported as a lookup failure.
+  it('IDN domains are punycoded before the query, and the result says so', async () => {
+    const f = mockFetch({ Status: 0, Answer: [{ data: '10 mx.example.com.' }] });
+    const r = await lookupMx('münchen.de', f);
+    expect(r.status).toBe('has_mx');
+    expect(r.queriedAs).toBe('xn--mnchen-3ya.de');
+    const calledUrl = (f as unknown as { mock: { calls: [string][] } }).mock.calls[0][0];
+    expect(calledUrl).toContain('name=xn--mnchen-3ya.de');
+  });
+
+  it('garbage input is invalid_name and never reaches the resolver', async () => {
+    const f = mockFetch({ Status: 0 });
+    for (const bad of ['not a domain!!', 'somesh@gmail.com', '<script>alert(1)</script>', '   ']) {
+      const r = await lookupMx(bad, f);
+      expect(r.status).toBe('invalid_name');
+    }
+    expect(f).not.toHaveBeenCalled();
+  });
+});
+
+describe('normalizeDomainName', () => {
+  it('trims, lowercases, and strips a trailing dot', () => {
+    expect(normalizeDomainName('  Stripe.COM. ')).toBe('stripe.com');
+  });
+  it('punycodes IDNs', () => {
+    expect(normalizeDomainName('münchen.de')).toBe('xn--mnchen-3ya.de');
+  });
+  it('rejects emails, paths, and whitespace', () => {
+    expect(normalizeDomainName('a@b.com')).toBeNull();
+    expect(normalizeDomainName('example.com/path')).toBeNull();
+    expect(normalizeDomainName('not a domain')).toBeNull();
+    expect(normalizeDomainName('')).toBeNull();
   });
 });
 
@@ -86,6 +137,18 @@ describe('segment', () => {
     const r = segment(inputs, map);
     expect(r.clean).toHaveLength(1);
     expect(r.catchAllHold).toHaveLength(0);
+  });
+
+  it('nxdomain and invalid_name are invalid with their own distinct reasons', () => {
+    const inputs = [input('1', 'Dead', 'gone.example'), input('2', 'Typo', 'bad name')];
+    const map = new Map([
+      ['gone.example', mx('gone.example', 'nxdomain')],
+      ['bad name', mx('bad name', 'invalid_name')],
+    ]);
+    const r = segment(inputs, map);
+    expect(r.invalid).toHaveLength(2);
+    expect(r.invalid[0].reason).toContain('NXDOMAIN');
+    expect(r.invalid[1].reason).toContain('Not a valid domain name');
   });
 
   it('a domain missing from the MX map defaults to invalid, not a crash', () => {

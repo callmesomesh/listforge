@@ -36,11 +36,17 @@ export function segment(inputs: DomainInput[], mxByDomain: Map<string, MxResult>
 }
 
 function classify(mx: MxResult): { verdict: SegmentedAccount['verdict']; reason: string } {
+  if (mx.status === 'invalid_name') {
+    return { verdict: 'invalid', reason: 'Not a valid domain name — fix the record before anything else' };
+  }
+  if (mx.status === 'nxdomain') {
+    return { verdict: 'invalid', reason: 'Domain does not exist (NXDOMAIN) — a typo or a dead company; permanently unreachable' };
+  }
   if (mx.status === 'lookup_failed') {
-    return { verdict: 'invalid', reason: 'DNS lookup failed — could not reach a resolver for this domain' };
+    return { verdict: 'invalid', reason: 'DNS lookup failed — could not reach a resolver for this domain; possibly transient, retry before writing it off' };
   }
   if (mx.status === 'no_mx') {
-    return { verdict: 'invalid', reason: 'No MX record — this domain cannot receive mail at all' };
+    return { verdict: 'invalid', reason: 'No MX record — this domain exists but cannot receive mail' };
   }
   const catchAllProvider = mx.records.find((host) =>
     KNOWN_CATCH_ALL_MX_FRAGMENTS.some((fragment) => host.toLowerCase().includes(fragment)),

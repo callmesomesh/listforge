@@ -61,6 +61,7 @@ export default function ListForgeDemo() {
           {liveResult && (
             <div className={`live-result${liveLoading ? ' pending' : ''}`}>
               <strong>{liveResult.domain}</strong>
+              {liveResult.queriedAs && <> (queried as <code className="mono">{liveResult.queriedAs}</code>)</>}
               {' — '}
               {liveResult.status === 'has_mx' && (
                 <>
@@ -74,14 +75,30 @@ export default function ListForgeDemo() {
               )}
               {liveResult.status === 'no_mx' && (
                 <>
-                  no_mx — this domain publishes no mail exchange record
-                  <div className="rec">It cannot receive email at all. Never load this into a sender.</div>
+                  no_mx — this domain exists but publishes no mail exchange record
+                  <div className="rec">It cannot receive email. Never load this into a sender.</div>
+                </>
+              )}
+              {liveResult.status === 'nxdomain' && (
+                <>
+                  nxdomain — this domain does not exist
+                  <div className="rec">
+                    The resolver returned NXDOMAIN: nothing is registered here. A typo or a dead
+                    company — permanently unreachable, which is a different fact than a domain
+                    with no mail setup.
+                  </div>
+                </>
+              )}
+              {liveResult.status === 'invalid_name' && (
+                <>
+                  invalid_name — not a plausible domain name
+                  <div className="rec">This input can&apos;t be queried as a hostname. Check for typos, spaces, or a full email address where a domain should be.</div>
                 </>
               )}
               {liveResult.status === 'lookup_failed' && (
                 <>
                   lookup_failed
-                  <div className="rec">DNS didn&apos;t resolve — could be a typo, a dead domain, or a transient resolver issue.</div>
+                  <div className="rec">The resolver couldn&apos;t be reached or returned an error — possibly transient. Retry before writing the domain off.</div>
                 </>
               )}
             </div>

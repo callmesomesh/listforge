@@ -4,13 +4,15 @@ export interface DomainInput {
   domain: string;
 }
 
-export type MxStatus = 'has_mx' | 'no_mx' | 'lookup_failed';
+export type MxStatus = 'has_mx' | 'no_mx' | 'nxdomain' | 'invalid_name' | 'lookup_failed';
 
 export interface MxResult {
   domain: string;
   status: MxStatus;
   records: string[]; // raw MX exchange hostnames, empty if none
   checkedAt: string;
+  /** ASCII (punycode) form actually queried, when it differs from the input. */
+  queriedAs?: string;
 }
 
 export type Verdict = 'clean' | 'catch_all_hold' | 'invalid';
